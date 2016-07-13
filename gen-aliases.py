@@ -1,3 +1,5 @@
+# author: gergely.nyiri@gmail.com
+
 import os
 import getopt
 import sys
@@ -5,6 +7,10 @@ import logging, logging.handlers
 
 
 def create_logger():
+    """
+    Create logger instance
+    :return: logger instance
+    """
     _logger = logging.getLogger('gen-aliases')
     file_handler = logging.FileHandler('log.txt')
     stream_handler = logging.StreamHandler()
@@ -17,6 +23,43 @@ def create_logger():
     return _logger
 
 
+class AliasCandidate(object):
+    """
+    Class representing a candidate for alias during a directory scan
+    """
+    def __init__(self, name, path, num_directories, level):
+        """
+        :param name: name of the alias
+        :param path:  path of the alias
+        :param num_directories: number of directories
+        :param level: level of directory from the root
+        """
+        self._name = name
+        self._path = path
+        self._num_directories = num_directories
+        self._level = level
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def path(self):
+        return self._path
+
+    @property
+    def num_directories(self):
+        return self._num_directories
+
+    @property
+    def level(self):
+        return self._level
+
+    def __str__(self):
+        return "alias " + self.name + "=\"cd " + self.path + "\"\n"
+
+
+
 logger = create_logger()
 
 
@@ -25,26 +68,42 @@ def print_help():
     sys.exit(-1)
 
 
-def gen_aliases(root_directory, alias_set, level):
-    # logger.info("Generate aliases from %s", root_directory)
+def gen_aliases(root_directory, candidates, level):
+    """
+    Generate aliases from root_directory
+    :param root_directory: directory to start the traversing from
+    :param candidates: set of aliases found so far
+    :param level: level of recursion
+    :return: None
+    """
 
-    num_dirs = len([file_name for file_name in os.listdir(root_directory) if
+    num_directories = len([file_name for file_name in os.listdir(root_directory) if
                     os.path.isdir(os.path.join(root_directory, file_name))])
 
-    alias_set.add((os.path.basename(root_directory), root_directory, num_dirs, level))
+    candidates.append(AliasCandidate(os.path.basename(root_directory), root_directory, num_directories, level))
 
-    logger.debug("%s (%s, %d, %d)", os.path.basename(root_directory), root_directory, num_dirs, level)
+    logger.debug("%s (%s, %d, %d)", os.path.basename(root_directory), root_directory, num_directories, level)
 
     for file_name in os.listdir(root_directory):
         file_path = os.path.join(root_directory, file_name)
         if os.path.isdir(file_path):
-            gen_aliases(file_path, alias_set, level + 1)
+            gen_aliases(file_path, candidates, level + 1)
 
 
-def write_aliases(alias_file, alias_set):
-    for elem in alias_set:
-        if elem[0]:
-            alias_file.write("alias " + elem[0] + "=\"cd " + elem[1] + "\"\n")
+def write_aliases(output_file, candidates):
+    candidate_counter = dict()
+
+    for candidate in candidates:
+        if candidate.name in candidate_counter.keys():
+            candidate_counter[candidate.name] += 1
+        else:
+            candidate_counter[candidate.name] = 1
+
+    for candidate in candidates:
+        if candidate.name and (candidate_counter[candidate.name] == 1):
+            output_file.write(str(candidate))
+        else:
+            logger.warning("path %s is ambiguous (%d directories of the same name)", candidate.name, candidate_counter[candidate.name])
 
 
 def main(argv):
@@ -64,10 +123,10 @@ def main(argv):
         else:
             print_help()
 
-    alias_file = open("aliases.sh", "w")
-    alias_set = set()
-    gen_aliases(directory, alias_set, 1)
-    write_aliases(alias_file, alias_set)
+    output_file = open("aliases.sh", "w")
+    candidates = list()
+    gen_aliases(directory, candidates, 1)
+    write_aliases(output_file, candidates)
 
 
 if __name__ == '__main__':
