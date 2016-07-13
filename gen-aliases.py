@@ -4,6 +4,7 @@ import os
 import getopt
 import sys
 import logging, logging.handlers
+import re
 
 
 def create_logger():
@@ -90,8 +91,9 @@ def gen_aliases(root_directory, candidates, level):
             gen_aliases(file_path, candidates, level + 1)
 
 
-def write_aliases(output_file, candidates):
+def write_aliases(output_file, candidates, preferred):
     candidate_counter = dict()
+    regex = r'%s' % preferred
 
     for candidate in candidates:
         if candidate.name in candidate_counter.keys():
@@ -100,19 +102,30 @@ def write_aliases(output_file, candidates):
             candidate_counter[candidate.name] = 1
 
     for candidate in candidates:
-        if candidate.name and (candidate_counter[candidate.name] == 1):
-            output_file.write(str(candidate))
-        else:
-            logger.warning("path %s is ambiguous (%d directories of the same name)", candidate.name, candidate_counter[candidate.name])
+        if candidate.name:
+            if candidate.name[0] == ".":
+                continue
+            if candidate.name and (candidate_counter[candidate.name] == 1):
+                output_file.write(str(candidate))
+            else:
+                ambiguous_candidates = [(c.name, c.path) for c in candidates if c.name == candidate.name]
+                logger.warning("path %s is ambiguous (%d directories of the same name)", candidate.name, candidate_counter[candidate.name])
+                for amb in ambiguous_candidates:
+                    if amb[0]:
+                        if re.match(regex, amb[1], re.M | re.I):
+                            output_file.write(str(candidate))
+                            logger.warning("--> %s will be taken", amb[1])
+                            break
 
 
 def main(argv):
     logger.debug("Start")
 
     directory = "."
+    preferred = "."
 
     try:
-        opts, args = getopt.getopt(argv[1:], "d:", ["directory="])
+        opts, args = getopt.getopt(argv[1:], "d:p:", ["directory=", "preferred="])
     except getopt.GetoptError:
         print_help()
     for opt, arg in opts:
@@ -120,13 +133,15 @@ def main(argv):
             print_help()
         elif opt in ("-d", "--directory"):
             directory = arg
+        elif opt in ("-p", "--preferred"):
+            preferred = arg
         else:
             print_help()
 
     output_file = open("aliases.sh", "w")
     candidates = list()
     gen_aliases(directory, candidates, 1)
-    write_aliases(output_file, candidates)
+    write_aliases(output_file, candidates, preferred)
 
 
 if __name__ == '__main__':
